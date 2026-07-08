@@ -14,7 +14,7 @@ from playwright.sync_api import sync_playwright
 
 # ===== 設定 =====
 TARGET_URL = "https://www.apple.com/jp/shop/refurbished/mac/macbook-pro"
-KEYWORDS = ["MacBook"]  # テスト用: 一時的に緩い条件にしています
+KEYWORDS = ["14インチ", "M5", "32GB"]  # すべて含む商品を検索対象とする
 STATE_FILE = Path("state.json")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
