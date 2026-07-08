@@ -75,12 +75,20 @@ def notify_discord(items: list):
 
     import urllib.request
 
-    lines = "\n".join(f"・{item}" for item in items)
+    MAX_ITEMS = 10
+    shown_items = items[:MAX_ITEMS]
+    lines = "\n".join(f"・{item}" for item in shown_items)
+    remaining = len(items) - len(shown_items)
+    if remaining > 0:
+        lines += f"\n…他 {remaining} 件"
+
     content = (
         "🎉 **在庫が見つかりました！**\n"
         f"{lines}\n\n"
         f"{TARGET_URL}"
     )
+    content = content[:1900]  # Discordの2000文字制限に対する安全マージン
+    
     payload = json.dumps({"content": content}).encode("utf-8")
     req = urllib.request.Request(
         DISCORD_WEBHOOK_URL,
