@@ -13,8 +13,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 # ===== 設定 =====
-TARGET_URL = "https://www.apple.com/jp/shop/refurbished/iphone/iphone"
-KEYWORDS = ["iPhone"]  # テスト用: 一時的に緩い条件にしています
+TARGET_URL = "https://www.apple.com/jp/shop/refurbished/mac/macbook-pro"
+KEYWORDS = ["MacBook"]  # テスト用: 一時的に緩い条件にしています
 STATE_FILE = Path("state.json")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
