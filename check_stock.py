@@ -14,7 +14,8 @@ from playwright.sync_api import sync_playwright
 
 # ===== 設定 =====
 TARGET_URL = "https://www.apple.com/jp/shop/refurbished/mac/macbook-pro"
-KEYWORDS = ["14インチ", "M5", "32GB"]  # すべて含む商品を検索対象とする
+REQUIRED_KEYWORDS = ["14インチ", "M5"]  # すべて含む必要がある条件
+MEMORY_OPTIONS = ["16GB", "24GB", "32GB"]  # このいずれかを含めばOK
 STATE_FILE = Path("state.json")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
@@ -44,13 +45,13 @@ def fetch_products():
 
 
 def find_matching_lines(body_text: str):
-    """KEYWORDSを全て含む行を抽出する"""
+    """REQUIRED_KEYWORDSを全て含み、MEMORY_OPTIONSのいずれかを含む行を抽出する"""
     matches = []
     for line in body_text.split("\n"):
         line = line.strip()
         if not line:
             continue
-        if all(kw in line for kw in KEYWORDS):
+        if all(kw in line for kw in REQUIRED_KEYWORDS) and any(mem in line for mem in MEMORY_OPTIONS):
             matches.append(line)
     return matches
 
