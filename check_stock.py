@@ -1,8 +1,7 @@
 """
 Apple整備済製品 在庫監視スクリプト
 - 一覧ページで「14インチ」「M5」を含む商品(の個別ページURL)を探す
-- 見つかった候補ページをそれぞれ開いて、メモリ容量(16GB/24GB/32GBのいずれか)と
-  ストレージ容量(512GB/1TB/2TBなど)を確認する
+- 見つかった候補ページをそれぞれ開いて、メモリ容量・ストレージ容量・価格を確認する
 - 前回の状態(state.json)と比較し、「なし→あり」に変わったタイミングでDiscordに通知
 """
 
@@ -28,6 +27,8 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
+
+PRICE_PATTERN = re.compile(r"[\d,]{4,}円")
 
 
 def fetch_candidate_products(page):
@@ -55,7 +56,7 @@ def fetch_candidate_products(page):
 
 
 def check_specs_on_product_page(page, url):
-    """商品個別ページを開いて、メモリとストレージの情報を確認する"""
+    """商品個別ページを開いて、メモリ・ストレージ・価格の情報を確認する"""
     page.goto(url, wait_until="networkidle", timeout=60000)
     page.wait_for_timeout(1500)
     body_text = page.inner_text("body")
@@ -72,7 +73,10 @@ def check_specs_on_product_page(page, url):
             storage = st
             break
 
-    return memory, storage
+    price_match = PRICE_PATTERN.search(body_text)
+    price = price_match.group() if price_match else "不明"
+
+    return memory, storage, price
 
 
 def fetch_matching_products():
@@ -89,13 +93,14 @@ def fetch_matching_products():
         MAX_CANDIDATES_TO_CHECK = 20
         for item in candidates[:MAX_CANDIDATES_TO_CHECK]:
             time.sleep(1)  # サイトへの負荷を抑えるための小休止
-            memory, storage = check_specs_on_product_page(page, item["url"])
+            memory, storage, price = check_specs_on_product_page(page, item["url"])
             if memory:
                 matches.append({
                     "name": item["name"],
                     "url": item["url"],
                     "memory": memory,
                     "storage": storage or "不明",
+                    "price": price,
                 })
 
         browser.close()
@@ -128,7 +133,7 @@ def notify_discord(items: list):
     blocks = []
     for item in shown_items:
         blocks.append(
-            f"MacBook Pro / M5 / {item['memory']} / {item['storage']}\n"
+            f"MacBook Pro / M5 / {item['memory']} / {item['storage']} / {item['price']}\n"
             f"🔗 {item['url']}"
         )
     lines = "\n\n".join(blocks)
@@ -180,7 +185,7 @@ def main():
         print("該当商品なし。")
 
     save_state(found_now, [
-        {"name": m["name"], "url": m["url"], "memory": m["memory"], "storage": m["storage"]}
+        {"name": m["name"], "url": m["url"], "memory": m["memory"], "storage": m["storage"], "price": m["price"]}
         for m in matches
     ])
 
