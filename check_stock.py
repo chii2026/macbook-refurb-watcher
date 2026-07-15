@@ -48,7 +48,9 @@ def fetch_candidate_products(page):
         url = link.get("href", "")
         if not name or not url:
             continue
-        if all(kw in name for kw in REQUIRED_KEYWORDS):
+        is_required_match = all(kw in name for kw in REQUIRED_KEYWORDS)
+        is_excluded = ("M5 Pro" in name) or ("M5 Max" in name)
+        if is_required_match and not is_excluded:
             if url not in seen:
                 seen.add(url)
                 candidates.append({"name": name, "url": url})
