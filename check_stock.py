@@ -1,8 +1,8 @@
 """
 Apple整備済製品 在庫監視スクリプト
 - 一覧ページで「14インチ」「M5」を含む商品(の個別ページURL)を探す
-- 見つかった候補ページをそれぞれ開いて、メモリ容量(16GB/24GB/32GBのいずれか)が
-  記載されているか確認する
+- 見つかった候補ページをそれぞれ開いて、メモリ容量(16GB/24GB/32GBのいずれか)と
+  ストレージ容量(512GB/1TB/2TBなど)を確認する
 - 前回の状態(state.json)と比較し、「なし→あり」に変わったタイミングでDiscordに通知
 """
 
@@ -19,6 +19,7 @@ from playwright.sync_api import sync_playwright
 TARGET_URL = "https://www.apple.com/jp/shop/refurbished/mac/macbook-pro"
 REQUIRED_KEYWORDS = ["14インチ", "M5"]  # 一覧ページの商品名にすべて含まれている必要がある条件
 MEMORY_OPTIONS = ["16GB", "24GB", "32GB"]  # 個別ページの説明にこのいずれかが含まれればOK
+STORAGE_OPTIONS = ["512GB", "1TB", "2TB", "4TB", "256GB"]  # ストレージ容量の候補
 STATE_FILE = Path("state.json")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
@@ -53,15 +54,25 @@ def fetch_candidate_products(page):
     return candidates
 
 
-def check_memory_on_product_page(page, url):
-    """商品個別ページを開いて、MEMORY_OPTIONSのいずれかが含まれるか確認する"""
+def check_specs_on_product_page(page, url):
+    """商品個別ページを開いて、メモリとストレージの情報を確認する"""
     page.goto(url, wait_until="networkidle", timeout=60000)
     page.wait_for_timeout(1500)
     body_text = page.inner_text("body")
+
+    memory = None
     for mem in MEMORY_OPTIONS:
         if mem in body_text:
-            return mem
-    return None
+            memory = mem
+            break
+
+    storage = None
+    for st in STORAGE_OPTIONS:
+        if st in body_text:
+            storage = st
+            break
+
+    return memory, storage
 
 
 def fetch_matching_products():
@@ -75,13 +86,17 @@ def fetch_matching_products():
         candidates = fetch_candidate_products(page)
         print(f"一覧ページでの候補数(14インチ・M5): {len(candidates)}")
 
-        # 候補が多すぎる場合の安全弁(実行時間を抑えるため上限を設ける)
         MAX_CANDIDATES_TO_CHECK = 20
         for item in candidates[:MAX_CANDIDATES_TO_CHECK]:
             time.sleep(1)  # サイトへの負荷を抑えるための小休止
-            memory = check_memory_on_product_page(page, item["url"])
+            memory, storage = check_specs_on_product_page(page, item["url"])
             if memory:
-                matches.append(f"{item['name']} - {memory} [{item['url']}]")
+                matches.append({
+                    "name": item["name"],
+                    "url": item["url"],
+                    "memory": memory,
+                    "storage": storage or "不明",
+                })
 
         browser.close()
     return matches
@@ -109,15 +124,22 @@ def notify_discord(items: list):
 
     MAX_ITEMS = 10
     shown_items = items[:MAX_ITEMS]
-    lines = "\n".join(f"・{item}" for item in shown_items)
+
+    blocks = []
+    for item in shown_items:
+        blocks.append(
+            f"MacBook Pro / M5 / {item['memory']} / {item['storage']}\n"
+            f"🔗 {item['url']}"
+        )
+    lines = "\n\n".join(blocks)
+
     remaining = len(items) - len(shown_items)
     if remaining > 0:
-        lines += f"\n…他 {remaining} 件"
+        lines += f"\n\n…他 {remaining} 件"
 
     content = (
-        "🎉 **在庫が見つかりました！**\n"
-        f"{lines}\n\n"
-        f"{TARGET_URL}"
+        "🎉 **在庫が見つかりました！**\n\n"
+        f"{lines}"
     )
     content = content[:1900]  # Discordの2000文字制限に対する安全マージン
 
@@ -157,7 +179,10 @@ def main():
     else:
         print("該当商品なし。")
 
-    save_state(found_now, matches)
+    save_state(found_now, [
+        {"name": m["name"], "url": m["url"], "memory": m["memory"], "storage": m["storage"]}
+        for m in matches
+    ])
 
 
 if __name__ == "__main__":
