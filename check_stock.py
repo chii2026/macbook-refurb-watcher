@@ -1,6 +1,8 @@
 """
 Apple整備済製品 在庫監視スクリプト
-- 対象ページを開いて、条件に合う商品(14インチ / M5 / 32GB)が出品されているか確認
+- 一覧ページで「14インチ」「M5」を含む商品(の個別ページURL)を探す
+- 見つかった候補ページをそれぞれ開いて、メモリ容量(16GB/24GB/32GBのいずれか)が
+  記載されているか確認する
 - 前回の状態(state.json)と比較し、「なし→あり」に変わったタイミングでDiscordに通知
 """
 
@@ -8,14 +10,15 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
 # ===== 設定 =====
 TARGET_URL = "https://www.apple.com/jp/shop/refurbished/mac/macbook-pro"
-REQUIRED_KEYWORDS = ["14インチ", "M5"]  # すべて含む必要がある条件
-MEMORY_OPTIONS = ["16GB", "24GB", "32GB"]  # このいずれかを含めばOK
+REQUIRED_KEYWORDS = ["14インチ", "M5"]  # 一覧ページの商品名にすべて含まれている必要がある条件
+MEMORY_OPTIONS = ["16GB", "24GB", "32GB"]  # 個別ページの説明にこのいずれかが含まれればOK
 STATE_FILE = Path("state.json")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
@@ -26,33 +29,61 @@ USER_AGENT = (
 )
 
 
-def fetch_products():
-    """ページを開いて商品名っぽいテキストの一覧を取得する"""
+def fetch_candidate_products(page):
+    """一覧ページを開いて、REQUIRED_KEYWORDSをすべて含む商品の(名前, URL)一覧を取得する"""
+    page.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
+    page.wait_for_timeout(3000)  # 描画待ち
+
+    links = page.eval_on_selector_all(
+        "a[href*='/shop/product/']",
+        "els => els.map(el => ({text: el.innerText.trim(), href: el.href}))",
+    )
+
+    seen = set()
+    candidates = []
+    for link in links:
+        name = link.get("text", "")
+        url = link.get("href", "")
+        if not name or not url:
+            continue
+        if all(kw in name for kw in REQUIRED_KEYWORDS):
+            if url not in seen:
+                seen.add(url)
+                candidates.append({"name": name, "url": url})
+    return candidates
+
+
+def check_memory_on_product_page(page, url):
+    """商品個別ページを開いて、MEMORY_OPTIONSのいずれかが含まれるか確認する"""
+    page.goto(url, wait_until="networkidle", timeout=60000)
+    page.wait_for_timeout(1500)
+    body_text = page.inner_text("body")
+    for mem in MEMORY_OPTIONS:
+        if mem in body_text:
+            return mem
+    return None
+
+
+def fetch_matching_products():
+    """条件(14インチ・M5・メモリ16/24/32GBのいずれか)に合う商品を探す"""
+    matches = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(user_agent=USER_AGENT, locale="ja-JP")
         page = context.new_page()
-        page.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
 
-        # 商品カードのテキストをまとめて取得する。
-        # Appleのサイト構造は変わりやすいため、まずページ全体のテキストから
-        # 「商品名らしき行」を正規表現で拾う方式にしておく(壊れにくさ優先)。
-        page.wait_for_timeout(3000)  # 描画待ち
-        body_text = page.inner_text("body")
+        candidates = fetch_candidate_products(page)
+        print(f"一覧ページでの候補数(14インチ・M5): {len(candidates)}")
+
+        # 候補が多すぎる場合の安全弁(実行時間を抑えるため上限を設ける)
+        MAX_CANDIDATES_TO_CHECK = 20
+        for item in candidates[:MAX_CANDIDATES_TO_CHECK]:
+            time.sleep(1)  # サイトへの負荷を抑えるための小休止
+            memory = check_memory_on_product_page(page, item["url"])
+            if memory:
+                matches.append(f"{item['name']} - {memory} [{item['url']}]")
 
         browser.close()
-    return body_text
-
-
-def find_matching_lines(body_text: str):
-    """REQUIRED_KEYWORDSを全て含み、MEMORY_OPTIONSのいずれかを含む行を抽出する"""
-    matches = []
-    for line in body_text.split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        if all(kw in line for kw in REQUIRED_KEYWORDS) and any(mem in line for mem in MEMORY_OPTIONS):
-            matches.append(line)
     return matches
 
 
@@ -89,12 +120,12 @@ def notify_discord(items: list):
         f"{TARGET_URL}"
     )
     content = content[:1900]  # Discordの2000文字制限に対する安全マージン
-    
+
     payload = json.dumps({"content": content}).encode("utf-8")
     req = urllib.request.Request(
         DISCORD_WEBHOOK_URL,
         data=payload,
-headers={
+        headers={
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         },
@@ -108,8 +139,7 @@ headers={
 
 
 def main():
-    body_text = fetch_products()
-    matches = find_matching_lines(body_text)
+    matches = fetch_matching_products()
     found_now = len(matches) > 0
 
     prev_state = load_previous_state()
@@ -119,7 +149,6 @@ def main():
     for m in matches:
         print(" -", m)
 
-    # 「なし→あり」に変わった時だけ通知する
     if found_now and not found_before:
         print("新しく在庫が見つかりました。Discordに通知します。")
         notify_discord(matches)
