@@ -1,11 +1,8 @@
 name: MacBook Pro 在庫チェック
 
 on:
-  schedule:
-    # 15分おきに実行(GitHub Actionsの遅延を考慮しシンプルな間隔に統一)
-    - cron: "*/15 * * * *"
-  workflow_dispatch: {}
-
+  workflow_dispatch: {}  # cron-job.orgから15分おきに起動する方式に変更
+  
 jobs:
   check-stock:
     runs-on: ubuntu-latest
