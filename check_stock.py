@@ -172,14 +172,14 @@ def main():
     found_now = len(matches) > 0
 
     prev_state = load_previous_state()
-    prev_urls = {item.get("url") for item in prev_state.get("items", [])}
+    prev_urls = {item.get("url", "").split("?")[0] for item in prev_state.get("items", [])}
 
     print(f"現在の該当件数: {len(matches)}")
     for m in matches:
         print(" -", m["name"], m["memory"], m["storage"], m["price"])
 
     # 前回のリストに存在しなかったURL = 新入荷
-    new_items = [m for m in matches if m["url"] not in prev_urls]
+    new_items = [m for m in matches if m["url"].split("?")[0] not in prev_urls]
 
     if new_items:
         print(f"新入荷 {len(new_items)} 件を検出。Discordに通知します。")
