@@ -172,17 +172,20 @@ def main():
     found_now = len(matches) > 0
 
     prev_state = load_previous_state()
-    found_before = prev_state.get("found", False)
+    prev_urls = {item.get("url") for item in prev_state.get("items", [])}
 
     print(f"現在の該当件数: {len(matches)}")
     for m in matches:
-        print(" -", m)
+        print(" -", m["name"], m["memory"], m["storage"], m["price"])
 
-    if found_now and not found_before:
-        print("新しく在庫が見つかりました。Discordに通知します。")
-        notify_discord(matches)
-    elif found_now and found_before:
-        print("前回から継続して在庫あり。通知はスキップします。")
+    # 前回のリストに存在しなかったURL = 新入荷
+    new_items = [m for m in matches if m["url"] not in prev_urls]
+
+    if new_items:
+        print(f"新入荷 {len(new_items)} 件を検出。Discordに通知します。")
+        notify_discord(new_items)
+    elif found_now:
+        print("在庫はあるが新入荷なし。通知はスキップします。")
     else:
         print("該当商品なし。")
 
