@@ -129,26 +129,33 @@ def notify_discord(items: list):
 
     import urllib.request
 
-    MAX_ITEMS = 10
-    shown_items = items[:MAX_ITEMS]
+    CHAR_LIMIT = 1900
+    header = "🎉 **在庫が見つかりました！**\n\n"
 
     blocks = []
-    for item in shown_items:
-        blocks.append(
+    total_len = len(header)
+    shown_count = 0
+    for item in items:
+        # URLの追跡パラメータ(?以降)を外して短くする(リンクとしてはそのまま有効)
+        clean_url = item["url"].split("?")[0]
+        block = (
             f"MacBook Pro / M5 / {item['memory']} / {item['storage']} / {item['price']}\n"
-            f"🔗 {item['url']}"
+            f"🔗 {clean_url}"
         )
+        # このブロックを足すと制限を超える場合はそこで打ち止め
+        added_len = len(block) + 2  # 区切りの空行ぶん
+        if total_len + added_len > CHAR_LIMIT:
+            break
+        blocks.append(block)
+        total_len += added_len
+        shown_count += 1
+
     lines = "\n\n".join(blocks)
-
-    remaining = len(items) - len(shown_items)
+    remaining = len(items) - shown_count
     if remaining > 0:
-        lines += f"\n\n…他 {remaining} 件"
+        lines += f"\n\n…他 {remaining} 件(Appleのページで確認してください)"
 
-    content = (
-        "🎉 **在庫が見つかりました！**\n\n"
-        f"{lines}"
-    )
-    content = content[:1900]  # Discordの2000文字制限に対する安全マージン
+    content = header + lines
 
     payload = json.dumps({"content": content}).encode("utf-8")
     req = urllib.request.Request(
